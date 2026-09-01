@@ -1,0 +1,62 @@
+name: Regenerate SmartThings standard icons
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/regenerate-smartthings-standard-icons.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          persist-credentials: true
+
+      - name: Install image tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends imagemagick
+
+      - name: Regenerate and validate standard icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_icon="custom_integrations/smartthings_web/icon@2x.png"
+          output_icon="$(mktemp --suffix=.png)"
+          trap 'rm -f "$output_icon"' EXIT
+
+          identify "$source_icon"
+          convert "$source_icon" -filter Lanczos -resize 256x256 -strip PNG32:"$output_icon"
+          identify "$output_icon"
+
+          metadata="$(identify -format '%w %h %m %[channels]' "$output_icon")"
+          test "$metadata" = "256 256 PNG srgba"
+
+          install -m 0644 "$output_icon" custom_integrations/smartthings_web/icon.png
+          install -m 0644 "$output_icon" custom_integrations/smartthings_find/icon.png
+          cmp custom_integrations/smartthings_web/icon.png custom_integrations/smartthings_find/icon.png
+          cmp custom_integrations/smartthings_web/icon@2x.png custom_integrations/smartthings_find/icon@2x.png
+          git diff --check
+
+      - name: Commit regenerated icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_integrations/smartthings_web/icon.png custom_integrations/smartthings_find/icon.png
+          if git diff --cached --quiet; then
+            echo "Standard icons are already current."
+            exit 0
+          fi
+          git commit -m "Regenerate cropped SmartThings standard icons"
+          git push origin HEAD:master
