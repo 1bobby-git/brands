@@ -35,19 +35,37 @@ jobs:
         shell: bash
         run: python -m pip install --disable-pip-version-check Pillow
 
-      - name: Normalize RGBA icons and high-density variants
+      - name: Decode and normalize RGBA icons
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          from io import BytesIO
           from pathlib import Path
+
           from PIL import Image
 
+          PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
           root = Path("custom_integrations")
+
           for domain in ("smartthings_web", "smartthings_find", "kepco_on"):
               directory = root / domain
               source = directory / "icon.png"
-              image = Image.open(source).convert("RGBA")
+              raw = source.read_bytes()
+
+              if not raw.startswith(PNG_SIGNATURE):
+                  compact = b"".join(raw.split())
+                  try:
+                      raw = base64.b64decode(compact, validate=True)
+                  except Exception as err:
+                      raise SystemExit(f"Unable to decode {domain}/icon.png: {err}") from err
+                  if not raw.startswith(PNG_SIGNATURE):
+                      raise SystemExit(f"Decoded {domain}/icon.png is not PNG")
+
+              image = Image.open(BytesIO(raw)).convert("RGBA")
               if image.size != (256, 256):
                   image = image.resize((256, 256), Image.Resampling.LANCZOS)
               image.save(source, format="PNG", optimize=True, compress_level=9)
@@ -66,8 +84,7 @@ jobs:
                       raise SystemExit(f"{domain}/{name} is not RGBA: {image.mode}")
                   if image.size != expected:
                       raise SystemExit(f"{domain}/{name} has unexpected size: {image.size}")
-                  alpha = image.getchannel("A")
-                  minimum, maximum = alpha.getextrema()
+                  minimum, maximum = image.getchannel("A").getextrema()
                   if minimum != 0 or maximum != 255:
                       raise SystemExit(
                           f"{domain}/{name} lacks full transparency range: {(minimum, maximum)}"
