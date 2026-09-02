@@ -39,6 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Source PNG blobs were repaired before this one-shot normalization run.
           python - <<'PY'
           from pathlib import Path
           from PIL import Image
