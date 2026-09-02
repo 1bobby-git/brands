@@ -39,7 +39,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Source PNG blobs were repaired before this one-shot normalization run.
           python - <<'PY'
           from pathlib import Path
           from PIL import Image
@@ -51,6 +50,8 @@ jobs:
               image = Image.open(source).convert("RGBA")
               if image.size != (256, 256):
                   raise SystemExit(f"{domain}/icon.png has unexpected size: {image.size}")
+              alpha = image.getchannel("A").point(lambda value: 255 if value >= 254 else value)
+              image.putalpha(alpha)
               minimum, maximum = image.getchannel("A").getextrema()
               if minimum != 0 or maximum != 255:
                   raise SystemExit(
